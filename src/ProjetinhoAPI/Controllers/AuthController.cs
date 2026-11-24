@@ -10,7 +10,7 @@ namespace ProjetinhoAPI.Controllers;
 
 [ApiController]
 [Route("auth")]
-public class AuthController(IUserRepository users, ITokenService tokens) : ControllerBase
+public class AuthController(IUserRepository users, ITokenService tokens, ILogger<AuthController> logger) : ControllerBase
 {
     /// <summary>Troca usuário + senha por um token JWT.</summary>
     [HttpPost("login")]
@@ -19,11 +19,15 @@ public class AuthController(IUserRepository users, ITokenService tokens) : Contr
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public ActionResult<LoginResponse> Login(LoginRequest request)
     {
+        // O motivo da recusa (usuário inexistente ou senha errada) é registrado pelo repositório.
         var user = users.ValidateCredentials(request.Username, request.Password);
         if (user is null)
             return Problem(statusCode: StatusCodes.Status401Unauthorized, title: "Usuário ou senha inválidos.");
 
         var token = tokens.CreateToken(user);
+        logger.LogInformation("Login realizado pelo usuário {Username}. Token válido até {ExpiresAtUtc:u}",
+            user.Username, token.ExpiresAtUtc);
+
         return Ok(new LoginResponse(token.Token, "Bearer", token.ExpiresAtUtc));
     }
 
@@ -37,6 +41,8 @@ public class AuthController(IUserRepository users, ITokenService tokens) : Contr
         var id = User.FindFirstValue(AuthClaims.UserId) ?? string.Empty;
         var username = User.Identity?.Name ?? string.Empty;
         var roles = User.FindAll(AuthClaims.Role).Select(c => c.Value);
+        logger.LogDebug("Usuário {Username} consultou os próprios dados", username);
+
         return Ok(new MeResponse(id, username, roles));
     }
 }

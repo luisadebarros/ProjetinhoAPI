@@ -10,7 +10,10 @@ using ProjetinhoAPI.Services.Interfaces;
 
 namespace ProjetinhoAPI.Services;
 
-public sealed class TokenService(IOptions<JwtOptions> options, TimeProvider timeProvider) : ITokenService
+public sealed class TokenService(
+    IOptions<JwtOptions> options,
+    TimeProvider timeProvider,
+    ILogger<TokenService> logger) : ITokenService
 {
     private readonly JwtOptions _options = options.Value;
     private readonly JsonWebTokenHandler _handler = new();
@@ -20,11 +23,13 @@ public sealed class TokenService(IOptions<JwtOptions> options, TimeProvider time
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var expires = now.AddMinutes(_options.ExpirationMinutes);
 
+        var tokenId = Guid.NewGuid().ToString();
+
         var claims = new List<Claim>
         {
             new(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
             new(JwtRegisteredClaimNames.UniqueName, user.Username),
-            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            new(JwtRegisteredClaimNames.Jti, tokenId),
         };
         claims.AddRange(user.Roles.Select(role => new Claim(AuthClaims.Role, role)));
 
@@ -41,6 +46,12 @@ public sealed class TokenService(IOptions<JwtOptions> options, TimeProvider time
             SigningCredentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256),
         };
 
-        return new AccessToken(_handler.CreateToken(descriptor), expires);
+        var token = _handler.CreateToken(descriptor);
+
+        // Nunca registre o token em si: quem lê o log poderia usá-lo. O jti basta para rastrear.
+        logger.LogDebug("Token JWT gerado para o usuário {Username} (jti {TokenId}), válido até {ExpiresAtUtc:u}",
+            user.Username, tokenId, expires);
+
+        return new AccessToken(token, expires);
     }
 }
